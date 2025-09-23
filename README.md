@@ -84,23 +84,18 @@ graph TD
 
 ```mermaid
 graph TD
+    user["Hiker/User (Mobile App)"]
+
     subgraph "CapeHike Secure"
-        api_service["API Service (Spring Boot)<br>• REST endpoints<br>• JWT auth<br>• Request validation"]
-        workers["Background Workers (Spring Boot + Temporal)<br>• Workflow execution<br>• Activity processing<br>• Notification sending"]
+        subgraph "Deployables (Spring Boot)"
+            api_service["API Service (Deployable)<br>Spring Boot — Public ingress<br>• REST endpoints<br>• JWT auth<br>• Request validation"]
+            worker_service["Worker Service (Deployable)<br>Spring Boot + Temporal Worker — Internal only<br>• Workflow execution<br>• Activity processing<br>• Notification sending"]
+        end
+
         db["PostgreSQL<br>• Users, Hikes<br>• Check-ins, Contacts<br>• SOS events<br>• Notifications"]
         cache["Redis (Optional)<br>• Rate limiting<br>• Short-lived cache"]
         temporal_server["Temporal Server<br>• Workflows<br>• Timers<br>• Task queues"]
     end
-
-    user["Hiker/User (Mobile App)"]
-
-    user -- "HTTPS/REST" --> api_service
-    api_service -- "JDBC" --> db
-    api_service -- "SDK" --> temporal_server
-    workers -- "Polls tasks" --> temporal_server
-    workers -- "Read/write state" --> db
-    api_service -- "Read/write" --> cache
-    workers -- "Sends notifications via" --> external_services
 
     subgraph "External Services"
         direction LR
@@ -109,9 +104,29 @@ graph TD
         email["Email Service"]
     end
 
-    external_services -- " " --- twilio
-    external_services -- " " --- fcm
-    external_services -- " " --- email
+    %% Client ingress
+    user -- "HTTPS/REST" --> api_service
+
+    %% Data store access
+    api_service -- "JDBC" --> db
+    worker_service -- "JDBC" --> db
+
+    %% Orchestration
+    api_service -- "Temporal SDK (client)" --> temporal_server
+    worker_service -- "Polls task queues (checkin-queue, sos-queue)" --> temporal_server
+
+    %% Cache
+    api_service -- "Read/write" --> cache
+
+    %% Provider egress (from Worker only)
+    worker_service -- "HTTPS (egress)" --> twilio
+    worker_service -- "HTTPS (egress)" --> fcm
+    worker_service -- "HTTPS (egress)" --> email
+
+    %% Legend (tidy)
+    subgraph Legend
+        note["Legend:<br>• Node badge — Public ingress: exposed endpoint; Internal only: no public ingress.<br>• Edge labels show protocol/role (JDBC, SDK client, polls queues, HTTPS egress).<br>• Worker polls named Temporal task queues for workflows."]
+    end
 ```
 
 ### 4.3 Component Diagram (C4 - Level 3) — API Service
@@ -299,4 +314,3 @@ Authentication via JWT (OAuth2 can be added later when integrating partners).
 6. Add automated tests and a CI pipeline.
 
 ---
-
